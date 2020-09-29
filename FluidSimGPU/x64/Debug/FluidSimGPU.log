@@ -1,0 +1,37 @@
+﻿  Compiling CUDA source file ..\..\..\solver-unidyn.cu...
+  
+  C:\Users\robbe\Desktop\Code\Repository\FluidSimGPU\FluidSimGPU>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.2\bin\nvcc.exe" -gencode=arch=compute_30,code=\"sm_30,compute_30\" --use-local-env -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.26.28801\bin\HostX86\x64" -x cu  -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.2\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.2\include"  -G   --keep-dir x64\Debug -maxrregcount=0  --machine 64 --compile -cudart static  -g   -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /Fdx64\Debug\vc142.pdb /FS /Zi /RTC1 /MDd " -o x64\Debug\solver-unidyn.cu.obj "C:\Users\robbe\Desktop\Code\solver-unidyn.cu" 
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(437): warning : variable "sizeleftold" was set but never used
+  
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(114): warning : variable "arraysGPU2" was declared but never referenced
+  
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(215): warning : variable "sizes" was declared but never referenced
+  
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(64): warning : extern inline function "dot_prod" was referenced but not defined
+  
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(64): warning : extern inline function "dot_prod" was referenced but not defined
+  
+  solver-unidyn.cu
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(82): warning C4305: '=': truncation from 'double' to 'float'
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(96): warning C4305: '=': truncation from 'double' to 'float'
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(121): warning C4305: '=': truncation from 'double' to 'float'
+C:\Users\robbe\Desktop\Code\FluidGPU-unidyn.cuh(197): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(122): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(122): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(122): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(135): warning C4305: 'argument': truncation from 'double' to 'float'
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(135): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(135): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(146): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(146): warning C4305: 'argument': truncation from 'double' to 'float'
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(146): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(154): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(154): warning C4305: 'argument': truncation from 'double' to 'float'
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(154): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(162): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(162): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(162): warning C4305: 'argument': truncation from 'double' to 'float'
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(170): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(170): warning C4244: 'argument': conversion from 'double' to 'float', possible loss of data
+C:/Users/robbe/Desktop/Code/solver-unidyn.cu(170): warning C4305: 'argument': truncation from 'double' to 'float'
+  FluidSimGPU.vcxproj -> C:\Users\robbe\Desktop\Code\Repository\FluidSimGPU\FluidSimGPU\x64\Debug\FluidSimGPU.exe
