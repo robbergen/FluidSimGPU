@@ -357,9 +357,9 @@ int main(int argc, char **argv)
 			cudaSetDevice(dev);
 			mykernel <<<NUMCELLS, 512 >> > (d_SPptr[dev], d_particleindex[dev], v_d[dev], d_start[dev], d_end[dev], d_split[dev], dsz[dev],Ns[dev]+buffer,dev,buffer,d_numsplit[dev]);
 			//cudaDeviceSynchronize();
-			//if (strcmp(cudaGetErrorName(cudaGetLastError()),"cudaSuccess")!=0){
+			if (strcmp(cudaGetErrorName(cudaGetLastError()),"cudaSuccess")!=0){
 				std::cout << "Force calc failed at t = "<< t << ",  " << cudaGetErrorName(cudaGetLastError())<< "\n";
-			//}
+			}
 			cudaMemcpy(&numsplit[dev][0], d_numsplit[dev], sizeof(int), cudaMemcpyDeviceToHost);
 			cudaDeviceSynchronize();
 		}
@@ -373,9 +373,9 @@ int main(int argc, char **argv)
 			thrust::sort_by_key(t_2, t_2 + Ns[dev], t_1,  thrust::greater<int>());
 			mykernel3 <<<numsplit[dev][0]*8, 512 >> > (d_SPptr[dev], d_particleindex[dev], v_d[dev], d_start[dev], d_end[dev], d_split[dev], dsz[dev],Ns[dev]+buffer,dev,buffer,d_numsplit[dev]);
 			cudaDeviceSynchronize();
-			//if (strcmp(cudaGetErrorName(cudaGetLastError()),"cudaSuccess")!=0){
+			if (strcmp(cudaGetErrorName(cudaGetLastError()),"cudaSuccess")!=0){
 				std::cout << "Force calc #2 failed at t = "<< t << ",  " << cudaGetErrorName(cudaGetLastError())<< "\n";
-			//}
+			}
 		}
 		
 		//Update particles
