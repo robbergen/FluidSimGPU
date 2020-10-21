@@ -14,8 +14,8 @@
 #define P_0 101325 //reference pressure of water in Pa
 #define DIFF 0//0.0000001 //diffusion magnitude
 
-#define ALPHA_FLUID -0.0075e1  //1.55 for sand viscosity
-#define ALPHA_BOUNDARY 800e-1 //10 for sand viscosity for boundary (should be high to prevent penetration)
+#define ALPHA_FLUID -0.0015e1  //-.155 for dt 001
+#define ALPHA_BOUNDARY 80e0 // (should be high to prevent penetration) 80 at dt 001
 
 #define ALPHA_SAND -0.0155e2  //1.55 for sand viscosity
 #define ALPHA__SAND_BOUNDARY 100e-1 //10 for sand viscosity for boundary (should be high to prevent penetration)
@@ -32,11 +32,20 @@
 #define MIXPRESSURE 1e-12
 #define MIXBROWNIAN 5e-9
 
-#define cutoff 0.06
-#define DT 0.001 //Time step size
+#define cutoff 0.12
+
+#define DT 0.0005 //Default time step size
+#define TIMEINT 0 //0 = leapfrog, 1 = euler, 2 = runge kutta
+#define VMAX 10.0 //Velocity at which time step should decrease (m/s)
+#define DTMULTMAX 10.0 //Maximum multiplier to time step size
+
+#define MERGEDIST 0.025  //default should be around 0.025
+#define MAXBLOCKPOP 15
+
 #include <cuda_runtime.h>
 #include <curand.h>
 #include <curand_kernel.h>
+#include <iostream>
     
 
 #define CUDA_CHECK_RETURN(value) {											\
@@ -127,10 +136,17 @@ public:
 	float yvel;
 	float zvel;
 
+	float xvel_prev = 0;
+	float yvel_prev = 0;
+	float zvel_prev = 0;
+
 	//Acceleration
 	float xacc;
 	float yacc;
 	float zacc;
+	float xacc_prev = 0;
+	float yacc_prev = 0;
+	float zacc_prev = 0;
 
 	//Index for tracking
 	int index;
@@ -176,6 +192,7 @@ public:
 	float delsolid = 0;
 	float delfluid = 0;
 	bool flag;
+	bool split = false;
 	
 
 	__host__ __device__ void set_dens(float x) {
@@ -283,7 +300,8 @@ public:
 
 	}
 
-	 __device__ void update(void) {
+	 __device__ void update(int t, float maxvv) {
+		float maxv = max(VMAX/DTMULTMAX,maxvv);
 
 		if (!flag) { //check if particle has already been updated
 
@@ -299,51 +317,114 @@ public:
 
 			if (!boundary) {
 				volatile float friction = abs(diffusionx) + abs(diffusiony) + abs(diffusionz);
-				solid += DT*delsolid;
+				solid += DT*delsolid*VMAX/maxv;
 				solid *= (solid >= 0.0);
 
 				if (fluid + delfluid < 0.2) { delfluid = 0; }
-				fluid += DT*delfluid;
+				fluid += DT*delfluid*VMAX/maxv;
 				fluid *= (fluid >= 0);
 
 				fluid *= 1 / (fluid + solid);
 				solid *= 1 / (fluid + solid);
-
-				xcoord = xcoord + DT*xvel + DIFF*diffusionx;
-
-				ycoord = ycoord + DT*yvel + DIFF*diffusiony;
+				
 
 
-				zcoord = zcoord + DT*zvel + DIFF*diffusionz;
-				/*if (zcoord < -0.7){
-					//curandState_t state;
-					//curand_init(cellnumber, 0, 0, &state);
-					//int result = curand(&state) % 100;
-					zcoord += 1.4;
+				//leapfrog
+				if (TIMEINT == 0) {
+					xcoord = xcoord + DT*xvel*VMAX/maxv + 0.5*DT*DT*VMAX/maxv*VMAX/maxv*xacc + DIFF*diffusionx;
+					ycoord = ycoord + DT*yvel*VMAX/maxv + 0.5*DT*DT*VMAX/maxv*VMAX/maxv*yacc +DIFF*diffusiony;
+					zcoord = zcoord + DT*zvel*VMAX/maxv + 0.5*DT*DT*VMAX/maxv*VMAX/maxv*zacc +DIFF*diffusionz;
+
+					xvel = (xvel + 0.5*DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[0]) + 5 * DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[0])) - ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[0])+ DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[0])) > 0)*friction*0.0000002*solid + ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[0]) +  DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[0])) < 0)*friction *0.0000002*solid;
+					yvel = (yvel + 0.5*DT*VMAX/maxv*yacc + DT*VMAX/maxv*(stress_accel[1]) + 5 * DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[1])) - ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[1])+ DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[1])) > 0)*friction*0.0000002*solid + ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[1]) +  DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[1])) < 0)*friction *0.0000002*solid;
+					zvel = (zvel + 0.5*DT*VMAX/maxv*zacc + DT*VMAX/maxv*(stress_accel[2]) + 5 * DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[2])) - ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[2])+ DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[2])) > 0)*friction*0.0000002*solid + ((xvel + DT*VMAX/maxv*xacc + DT*VMAX/maxv*(stress_accel[2]) +  DT*VMAX/maxv*DT*VMAX/maxv*(mixture_accel[2])) < 0)*friction *0.0000002*solid;	
+				}
+
+				if (TIMEINT == 1){
+					xcoord = xcoord + DT*xvel + DIFF*diffusionx;
+					ycoord = ycoord + DT*yvel + DIFF*diffusiony;
+					zcoord = zcoord + DT*zvel + DIFF*diffusionz;
+					xvel = (xvel + DT*xacc + DT*(stress_accel[0]) + 5 * DT*DT*(mixture_accel[0])) - ((xvel + DT*xacc + DT*(stress_accel[0])+ DT*DT*(mixture_accel[0])) > 0)*friction*0.0000002*solid + ((xvel + DT*xacc + DT*(stress_accel[0]) +  DT*DT*(mixture_accel[0])) < 0)*friction *0.0000002*solid;
+					//xvel *= (abs(xvel) > solid*0.002);
+					yvel = (yvel + DT*yacc + DT*(stress_accel[1]) + 5 * DT*DT*(mixture_accel[1])) - ((yvel + DT*yacc + DT*(stress_accel[1])+ DT*DT*(mixture_accel[1])) > 0)*friction*0.0000002*solid + ((yvel + DT*yacc + DT*(stress_accel[1]) +  DT*DT*(mixture_accel[1])) < 0)*friction *0.0000002*solid;
+					//yvel *= (abs(yvel) > solid*0.002);
+					zvel = (zvel + DT*zacc + DT*(stress_accel[2]) + 5 * DT*DT*(mixture_accel[2])) - ((zvel + DT*yacc + DT*(stress_accel[2]) + DT*DT*(mixture_accel[2])) > 0)*friction*0.0000002*solid + ((zvel + DT*yacc + DT*(stress_accel[2]) + DT*DT*(mixture_accel[2])) < 0)*friction *0.0000002*solid;
+					//zvel *= (abs(zvel) > solid*0.002);
+				}
+				if (zcoord < -0.89){
+					//simple way to redistribute/stop particles once they fall to the bottom
+					//zcoord += 1.6;
 					xvel = 0;
 					yvel = 0;
-					xcoord = xcoord/4-ycoord/6;
-					ycoord = ycoord/4-xcoord/6;
-				}*/
-				xvel = (xvel + DT*xacc + DT*(stress_accel[0]) + 5 * DT*DT*(mixture_accel[0])) - ((xvel + DT*xacc + DT*(stress_accel[0])+ DT*DT*(mixture_accel[0])) > 0)*friction*0.0000002*solid + ((xvel + DT*xacc + DT*(stress_accel[0]) +  DT*DT*(mixture_accel[0])) < 0)*friction *0.0000002*solid;
-				//xvel *= (abs(xvel) > solid*0.002);
-				yvel = (yvel + DT*yacc + DT*(stress_accel[1]) + 5 * DT*DT*(mixture_accel[1])) - ((yvel + DT*yacc + DT*(stress_accel[1])+ DT*DT*(mixture_accel[1])) > 0)*friction*0.0000002*solid + ((yvel + DT*yacc + DT*(stress_accel[1]) +  DT*DT*(mixture_accel[1])) < 0)*friction *0.0000002*solid;
-				//yvel *= (abs(yvel) > solid*0.002);
-				zvel = (zvel + DT*zacc + DT*(stress_accel[2]) + 5 * DT*DT*(mixture_accel[2])) - ((zvel + DT*yacc + DT*(stress_accel[2]) + DT*DT*(mixture_accel[2])) > 0)*friction*0.0000002*solid + ((zvel + DT*yacc + DT*(stress_accel[2]) + DT*DT*(mixture_accel[2])) < 0)*friction *0.0000002*solid;
-				//zvel *= (abs(zvel) > solid*0.002);
-				/*if (zvel < -2.5){
-					zvel = -2.5;
+
 				}
-				if (abs(yvel) > 1.0){
-					yvel = 1.0/yvel;
-				}
-				if (abs(xvel) > 1.0){
-					xvel = 1.0/xvel;
-				}*/
+
 				//Acceleration due to grav
-				xacc = -((220.0-70.0*solid) / dens)*delpressx;
-				yacc = -((220.0 - 70.0 * solid) / dens)*delpressy;
-				zacc = GRAVITY + ((-220.0 +70.0*solid)/ dens)*delpressz;
+				xacc = -((420.0-70.0*solid) / dens)*delpressx;
+				yacc = -((420.0 - 70.0 * solid) / dens)*delpressy;
+				zacc = GRAVITY + ((-420.0 +70.0*solid)/ dens)*delpressz;
+				
+				//Runge-kutta
+				if (TIMEINT ==2){
+					xvel += DT*xacc;
+					yvel += DT*yacc;
+					zvel += DT*zacc;
+					if (t%2 ==0){
+						xacc_prev=xacc;
+						yacc_prev=yacc;
+						zacc_prev=zacc;
+						xvel_prev = xvel;
+						yvel_prev = yvel;
+						zvel_prev = zvel;
+				
+						xcoord += DT*xvel;
+						ycoord += DT*yvel;
+						zcoord += DT*zvel;
+					}	
+					if (t%2 ==1){			
+						xcoord += DT/2.0*(-xvel_prev+xvel);
+						ycoord += DT/2.0*yvel*(-yvel_prev+yvel);
+						zcoord += DT/2.0*zvel*(-zvel_prev+zvel);
+						xvel += DT/2.0*(-xacc_prev+xacc);
+						yvel += DT/2.0*(-yacc_prev+yacc);
+						zvel += DT/2.0*(-zacc_prev+zacc);
+					}
+					if (zcoord < -0.89){
+						zcoord += 1.6;
+					}
+				}
+				//leapfrog
+				if (TIMEINT == 0){
+					xvel +=0.5*xacc*DT*VMAX/maxv;
+					yvel +=0.5*yacc*DT*VMAX/maxv;
+					zvel +=0.5*zacc*DT*VMAX/maxv;
+				}
+				if (abs(zvel) > 7.5){
+					//zvel = 7.5/zvel;
+				}
+				if (abs(yvel) > 7.0){
+					//yvel = 7.0/yvel;
+				}
+				if (abs(xvel) > 7.0){
+					//xvel = 7.0/xvel;
+				}
+
+				if (abs(zcoord) > 0.98){
+					zcoord = 0.97/zcoord;
+					zvel = 0;//-zvel;
+				}
+				if (abs(ycoord) > 0.98){
+					yvel = -yvel;
+				}
+				if (abs(xcoord) > 0.98){
+					xvel = -xvel;
+				}
+
+			}
+			else{
+				//zvel = acosf(abs(50-((t/2)%100))/50.1)-1.0;
+				//zcoord +=2.5*zvel*DT;
+				//printf("%4.4f, %4.4f\n", float(t), zvel);
 			}
 		}
 		flag = true; //reset flag for next timestep
@@ -462,9 +543,11 @@ public:
 };
 
 __global__ void findneighbours(int *cell, int *start, int *start_copy, int *end,  int nspts, int x);
-__global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *start, int *end, int *split, int nspts,int x,int dev, int buffer,int *numsplit);
-__global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *start, int *end, int *split, int nspts,int x,int dev, int buffer,int *numsplit);
-__global__ void mykernel2(Particle *SPptr, int *particleindex, int *cell, int *start_copy, int *start, int *end, int *split, int *numsplit, int nspts, int x,int dev, int buffer, float *spts, float *a3, float *b3);
+__global__ void force_calc_coarse(Particle *SPptr, int *particleindex, int *cell, int *start, int *end, int *split, int nspts,int x,int dev, int buffer,int *numsplit);
+__global__ void force_calc_fine(Particle *SPptr, int *particleindex, int *cell, int *start, int *end, int *split, int nspts,int x,int dev, int buffer,int *numsplit);
+__global__ void update_all(Particle *SPptr, int *particleindex, int *cell, int *start_copy, int *start, int *end, int *split, int *numsplit, int nspts, int x,float *maxv, int dev,  int buffer, int t, float *spts, float *a3, float *b3);
 __global__ void find_idx(int *SPptr, int dev, int npts, int buffer, int *xleft, int *xright, int *sleft, int *sright);
 __global__ void mem_shift(Particle *SPptr, Particle *buff, int *cells, int *ibuff, int dev, int shifts, int indexleft, int indexright);
 __global__ void cell_calc(Particle *SPptr, int *particleindex, int *cells, int size, int dev) ;
+__global__ void count_after_merge(int *cells, int *particleindex, int size, int *newsize);
+__global__ void VecMax(Particle* A, int* particleindex, float* B, int N, int blocks);
