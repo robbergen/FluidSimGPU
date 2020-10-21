@@ -178,10 +178,10 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 	}
 	__syncthreads();
 
-    if (blockpop > CELL_POP && tidx < blockpop && bidx < x && start[bidx] >= 0 && particleindex[start[bidx]] >= 0){
-        SPptr[particleindex[start[bidx]+tidx]].subindex = 1-(int((SPptr[particleindex[start[bidx]+tidx]].xcoord+1)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].xcoord+1+CELLSIZE/2)/CELLSIZE))
-                                    + 2 - 2*(int((SPptr[particleindex[start[bidx]+tidx]].ycoord+1)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].ycoord+1+CELLSIZE/2)/CELLSIZE))
-                                    +4*(int((SPptr[particleindex[start[bidx]+tidx]].zcoord+1)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].zcoord+1+CELLSIZE/2)/CELLSIZE));
+    if (blockpop > 6 && tidx < blockpop && bidx < x && start[bidx] >= 0 && particleindex[start[bidx]] >= 0){
+        SPptr[particleindex[start[bidx]+tidx]].subindex = 1-(int((SPptr[particleindex[start[bidx]+tidx]].xcoord-XMIN)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].xcoord-XMIN+CELLSIZE/2)/CELLSIZE))
+                                    + 2 - 2*(int((SPptr[particleindex[start[bidx]+tidx]].ycoord-YMIN)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].ycoord-YMIN+CELLSIZE/2)/CELLSIZE))
+                                    +4*(int((SPptr[particleindex[start[bidx]+tidx]].zcoord-ZMIN)/CELLSIZE) == int((SPptr[particleindex[start[bidx]+tidx]].zcoord-ZMIN+CELLSIZE/2)/CELLSIZE));
 
 		if (tidx==0){
 			split[bidx] = bidx;
@@ -239,52 +239,24 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 		}
 	}
 	__syncthreads();
-	
+
 	//if (bidx== 34624 && tidx < total) { printf("tidx: %d, cell#:%d, jj:%d, sum:%d \n", tidx, bidx + nb[pidx[jj[tidx] - 1]], jj[tidx],p[jj[tidx]]); }
 	//__syncthreads();
 	//int lb = 0;//dev*buffer; //lower bound cell
 	//int hb = x+buffer; //higher bound cell
 	//if (bidx ==0 && tidx ==0){printf("%d \n",*numsplit);}
-	
+
 	if (bidx<x && start[bidx] >= 0 && particleindex[start[bidx]] >= 0 && split[bidx] ==-1 && particleindex[start[bidx]] < nspts) { //should exclude the buffer here
 		if (tidx < total && bidx + nb[pidx[jj[tidx] - 1]] >= 0 && bidx + nb[pidx[jj[tidx] - 1]] < x) { 
 			///////////////////////////////////////////////////////////////////
 			volatile int j = particleindex[start[bidx + nb[pidx[jj[tidx] - 1]]] + sum[tidx] - (tidx + 1)];
 
-			
+
 			if (particleindex[start[bidx + nb[pidx[jj[tidx] - 1]]]] >= 0 && j < nspts && j >= 0) {  
 				for (volatile int i = start[bidx]; i <= end[bidx]; i++) {  
-					volatile int ii = i;//particleindex[i];
+					volatile int ii = particleindex[i];
 					float ds = (SPptr[ii]).distance((SPptr[j]));
-					
-					//Particle merging
-					if (ds <= (MERGE_DIST) && ds > 0 && SPptr[ii].mass>0 && SPptr[j].mass> 0 && SPptr[ii].mass<2 && SPptr[j].mass<2 && !SPptr[ii].boundary &&!SPptr[j].boundary && powf(SPptr[ii].diffusionx,2)+powf(SPptr[ii].diffusiony,2)+powf(SPptr[ii].diffusionz,2) < 20 && powf(SPptr[j].diffusionx,2)+powf(SPptr[j].diffusiony,2)+powf(SPptr[j].diffusionz,2) < 20 ) {
-						SPptr[ii].mass = MERGE_MASS;
-						SPptr[j].mass = 0;
-						
-						SPptr[j].boundary = true;
-						SPptr[ii].xvel=  (SPptr[ii].xvel + SPptr[j].xvel)/2.0;
-						SPptr[ii].yvel=  (SPptr[ii].yvel + SPptr[j].yvel)/2.0;
-						SPptr[ii].zvel=  (SPptr[ii].zvel + SPptr[j].zvel)/2.0;
-						SPptr[ii].xcoord=  (SPptr[ii].xcoord + SPptr[j].xcoord)/2.0;
-						SPptr[ii].ycoord=  (SPptr[ii].ycoord + SPptr[j].ycoord)/2.0;
-						SPptr[ii].zcoord=  (SPptr[ii].zcoord + SPptr[j].zcoord)/2.0;
-						SPptr[j].xcoord = SPptr[j].ycoord = SPptr[j].zcoord=90.99;
-						//SPptr[j].cellnumber = NUMCELLS+1;
-						//printf("%4.4f \n",ds);
-					} 
-
-					//Particle splitting
-					if (SPptr[ii].mass>3 && SPptr[ii].cellnumber < NUMCELLS && !SPptr[ii].boundary && ((powf(SPptr[ii].diffusionx,2)+powf(SPptr[ii].diffusiony,2)+powf(SPptr[ii].diffusionz,2)) > 35000 || (SPptr[ii].dens < 9400))) {
-						SPptr[ii].mass = 1;
-						
-						SPptr[ii].split = true;
-						SPptr[ii].ycoord += 0.015;
-						//SPptr[j].cellnumber = NUMCELLS+1;
-						//printf("%4.4f \n",ds);
-					}
-					
-					if (ds <= (2 * cutoff) && ds > 0) { 
+					if (ds <= (2 * cutoff) && ds > 0) { //should exclude buffer here somehow?
 
 						volatile float k = kernel(ds);
 						volatile float rabx = (SPptr[ii]).rab_x((SPptr[j]));
@@ -296,28 +268,24 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 						volatile float dkx = kernel_derivative(ds)*rabx / ds;
 						volatile float dky = kernel_derivative(ds)*raby / ds;
 						volatile float dkz = kernel_derivative(ds)*rabz / ds;
-						
+
 						//float dkxtest = kernel_test(ds)*rabx / ds;
 						//float dkytest = kernel_test(ds)*raby / ds;
 						//float dkztest = kernel_test(ds)*rabz / ds;
 
 						volatile float d = dot_prod(vabx, vaby, vabz, rabx, raby, rabz);
-						volatile float d2 = powf(ds, 2.0);
-						//added mass
-						
-						volatile float s = (((SPptr[ii].solid*9+1)*ALPHA_FLUID)* SOUND * (cutoff * (d / (d2 + 0.01*cutoff*cutoff)) + 50 * 1.0 / SOUND*powf(cutoff * (d / (d2 + 0.01*cutoff*cutoff)), 2.0)) / (((SPptr[ii]).dens + (SPptr[j]).dens) / 2.0)) *(d < 0)*(1 + (!(SPptr[ii]).boundary)*((SPptr[j]).boundary) * ((1+3*SPptr[ii].fluid*SPptr[ii].fluid)*ALPHA__SAND_BOUNDARY));
-						
+						volatile float d2 = powf(ds, 2);
+						volatile float s = (((SPptr[ii].solid*9+1)*ALPHA_FLUID)* SOUND * (cutoff * (d / (d2 + 0.01*powf(cutoff, 2))) + 50 * 1.0 / SOUND*powf(cutoff * (d / (d2 + 0.01*powf(cutoff, 2))), 2)) / (((SPptr[ii]).dens + (SPptr[j]).dens) / 2.0)) *(d < 0)*(1 + (!(SPptr[ii]).boundary)*((SPptr[j]).boundary) * ((1+3*SPptr[ii].fluid*SPptr[ii].fluid)*ALPHA__SAND_BOUNDARY));
 						//float s2 = ALPHA_LAMINAR_FLUID * SOUND * cutoff / ((SPptr[i]).dens + (SPptr[j]).dens)*d*(d < 0) / (d2 + 0.01*pow(cutoff, 2))*(1 + (!(SPptr[i]).boundary)*((SPptr[j]).boundary) *ALPHA_LAMINAR_BOUNDARY); //laminar
-						
-						volatile float dpx = ((SPptr[j]).press / powf((SPptr[j]).dens, 2.0) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2.0) + s)*dkx;
-						volatile float dpy = ((SPptr[j]).press / powf((SPptr[j]).dens, 2.0) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2.0) + s)*dky;
-						volatile float dpz = ((SPptr[j]).press / powf((SPptr[j]).dens, 2.0) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2.0) + s)*dkz;
+
+						volatile float dpx = ((SPptr[j]).press / powf((SPptr[j]).dens, 2) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2) + s)*dkx;
+						volatile float dpy = ((SPptr[j]).press / powf((SPptr[j]).dens, 2) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2) + s)*dky;
+						volatile float dpz = ((SPptr[j]).press / powf((SPptr[j]).dens, 2) + (SPptr[ii]).press / powf((SPptr[ii]).dens, 2) + s)*dkz;
 
 						volatile float mass_solid_frac = SPptr[ii].solid*RHO_0_SAND / (RHO_0_SAND*SPptr[ii].solid + RHO_0*(SPptr[ii].fluid));
 						volatile float mass_fluid_frac = SPptr[ii].fluid*RHO_0 / (RHO_0_SAND*SPptr[ii].solid + RHO_0*(SPptr[ii].fluid));
-						
+
 						if (mass_solid_frac > 0.001 && mass_solid_frac < 0.999 && mass_fluid_frac > 0.001 && mass_fluid_frac < 0.999 && !SPptr[ii].boundary && !SPptr[j].boundary) {
-							
 							volatile float solidgradx = (SPptr[j].solid - SPptr[ii].solid)*dkx; //note that fluidgrad = -solidgrad if there are only 2 types of particles
 							volatile float solidgrady = (SPptr[j].solid - SPptr[ii].solid)*dky;
 							volatile float solidgradz = (SPptr[j].solid - SPptr[ii].solid)*dkz;
@@ -325,17 +293,15 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 							float fluidgradx = (SPptr[j].fluid - SPptr[ii].fluid)*dkx;
 							float fluidgrady = (SPptr[j].fluid - SPptr[ii].fluid)*dky;
 							float fluidgradz = (SPptr[j].fluid - SPptr[ii].fluid)*dkz;
-							
 
 							float solidbrownianx = (solidgradx / (SPptr[ii].solid) - (mass_solid_frac*solidgradx / (SPptr[ii].solid) + mass_fluid_frac*fluidgradx / (SPptr[ii].fluid)));
 							float solidbrowniany = (solidgrady / (SPptr[ii].solid) - (mass_solid_frac*solidgrady / (SPptr[ii].solid) + mass_fluid_frac*fluidgrady / (SPptr[ii].fluid)));
 							float solidbrownianz = (solidgradz / (SPptr[ii].solid) - (mass_solid_frac*solidgradz / (SPptr[ii].solid) + mass_fluid_frac*fluidgradz / (SPptr[ii].fluid)));
-							
-							
+
 							float fluidbrownianx = (fluidgradx / (SPptr[ii].fluid) - (mass_fluid_frac*fluidgradx / (SPptr[ii].fluid) + mass_solid_frac*solidgradx / (SPptr[ii].solid)));
 							float fluidbrowniany = (fluidgrady / (SPptr[ii].fluid) - (mass_fluid_frac*fluidgrady / (SPptr[ii].fluid) + mass_solid_frac*solidgrady / (SPptr[ii].solid)));
 							float fluidbrownianz = (fluidgradz / (SPptr[ii].fluid) - (mass_fluid_frac*fluidgradz / (SPptr[ii].fluid) + mass_solid_frac*solidgradz / (SPptr[ii].solid)));
-							
+
 							float solidpressureslipx = (SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dkx - mass_solid_frac*(SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dkx - mass_fluid_frac*((SPptr[ii].fluid)*SPptr[ii].press - (SPptr[j].fluid)*SPptr[j].press)*dkx;
 							float solidpressureslipy = (SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dky - mass_solid_frac*(SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dky - mass_fluid_frac*((SPptr[ii].fluid)*SPptr[ii].press - (SPptr[j].fluid)*SPptr[j].press)*dky;
 							float solidpressureslipz = (SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dkz - mass_solid_frac*(SPptr[ii].solid*SPptr[ii].press - SPptr[j].solid*SPptr[j].press)*dkz - mass_fluid_frac*((SPptr[ii].fluid)*SPptr[ii].press - (SPptr[j].fluid)*SPptr[j].press)*dkz;
@@ -351,7 +317,7 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 							float fluidbodyx = (SPptr[ii].fluid*SPptr[ii].dens - (mass_solid_frac*SPptr[ii].solid*SPptr[ii].dens + mass_fluid_frac*SPptr[ii].fluid*SPptr[ii].dens)) * ((150.0 / SPptr[ii].dens)*SPptr[ii].delpressx - SPptr[ii].xvel*dkx*vabx - SPptr[ii].yvel*dky*vabx - SPptr[ii].zvel*dkz*vabx);
 							float fluidbodyy = (SPptr[ii].fluid*SPptr[ii].dens - (mass_solid_frac*SPptr[ii].solid*SPptr[ii].dens + mass_fluid_frac*SPptr[ii].fluid*SPptr[ii].dens)) * ((150.0 / SPptr[ii].dens)*SPptr[ii].delpressy - SPptr[ii].xvel*dkx*vaby - SPptr[ii].yvel*dky*vaby - SPptr[ii].zvel*dkz*vaby);
 							float fluidbodyz = (SPptr[ii].fluid*SPptr[ii].dens - (mass_solid_frac*SPptr[ii].solid*SPptr[ii].dens + mass_fluid_frac*SPptr[ii].fluid*SPptr[ii].dens)) * (GRAVITY + (150.0 / SPptr[ii].dens)*SPptr[ii].delpressz - SPptr[ii].xvel*dkx*vabz - SPptr[ii].yvel*dky*vabz - SPptr[ii].zvel*dkz*vabz);
-							
+						
 							atomicAdd(&(SPptr[ii].soliddriftvelx), MIXPRESSURE*(solidbodyx + solidpressureslipx) - MIXBROWNIAN*solidbrownianx);
 							atomicAdd(&(SPptr[ii].soliddriftvely), MIXPRESSURE*(solidbodyy + solidpressureslipy) - MIXBROWNIAN*solidbrowniany);
 							atomicAdd(&(SPptr[ii].soliddriftvelz), MIXPRESSURE*(solidbodyz + solidpressureslipz) - MIXBROWNIAN*solidbrownianz);
@@ -360,31 +326,30 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 							atomicAdd(&(SPptr[ii].fluiddriftvely), MIXPRESSURE*(fluidbodyy + fluidpressureslipy) - MIXBROWNIAN*fluidbrowniany);
 							atomicAdd(&(SPptr[ii].fluiddriftvelz), MIXPRESSURE*(fluidbodyz + fluidpressureslipz) - MIXBROWNIAN*fluidbrownianz);
 						}
+							atomicAdd(&(SPptr[ii].newdelpressx), dpx);
+							atomicAdd(&(SPptr[ii].newdelpressy), dpy);
+							atomicAdd(&(SPptr[ii].newdelpressz), dpz);
 							
-							atomicAdd(&(SPptr[ii].newdelpressx), dpx*SPptr[j].mass); //added mass
-							atomicAdd(&(SPptr[ii].newdelpressy), dpy*SPptr[j].mass);
-							atomicAdd(&(SPptr[ii].newdelpressz), dpz*SPptr[j].mass);
-							
-							atomicAdd(&(SPptr[ii].newdens), k *(1 + float(!(SPptr[ii]).boundary)*float((SPptr[j]).boundary)*BDENSFACTOR)*SPptr[j].mass); //added mass
+							atomicAdd(&(SPptr[ii].newdens), k *(1 + float(!(SPptr[ii]).boundary)*float((SPptr[j]).boundary)*BDENSFACTOR));
 
-							atomicAdd(&(SPptr[ii].diffusionx),SPptr[j].mass/ SPptr[j].dens*dkx*!SPptr[j].boundary*!SPptr[ii].boundary); //added boundary
-							atomicAdd(&(SPptr[ii].diffusiony), SPptr[j].mass/ SPptr[j].dens*dky*!SPptr[j].boundary*!SPptr[ii].boundary);
-							atomicAdd(&(SPptr[ii].diffusionz), SPptr[j].mass / SPptr[j].dens*dkz*!SPptr[j].boundary*!SPptr[ii].boundary);
+							atomicAdd(&(SPptr[ii].diffusionx), 1 / SPptr[j].dens*dkx);
+							atomicAdd(&(SPptr[ii].diffusiony), 1 / SPptr[j].dens*dky);
+							atomicAdd(&(SPptr[ii].diffusionz), 1 / SPptr[j].dens*dkz);
 							
 							volatile float mixfactor = (!SPptr[j].boundary)*(!SPptr[ii].boundary)*(SPptr[ii].solid > 0.0)* (SPptr[j].solid > 0.0) * 2 * (SPptr[ii].solid-0.0)*(SPptr[j].solid-0.0) / (SPptr[ii].solid-0.0 + SPptr[j].solid-0.0+0.01);
-							atomicAdd(&(SPptr[ii].vel_grad[0][0]), -mixfactor*vabx*dkx *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[0][1]), -mixfactor*vaby*dkx *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[0][2]), -mixfactor*vabz*dkx *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[1][0]), -mixfactor*vabx*dky *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[1][1]), -mixfactor*vaby*dky *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[1][2]), -mixfactor*vabz*dky *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[2][0]), -mixfactor*vabx*dkz *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[2][1]), -mixfactor*vaby*dkz *1./ (SPptr[ii]).dens);
-							atomicAdd(&(SPptr[ii].vel_grad[2][2]), -mixfactor*vabz*dkz *1./ (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[0][0]), -mixfactor*vabx*dkx / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[0][1]), -mixfactor*vaby*dkx / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[0][2]), -mixfactor*vabz*dkx / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[1][0]), -mixfactor*vabx*dky / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[1][1]), -mixfactor*vaby*dky / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[1][2]), -mixfactor*vabz*dky / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[2][0]), -mixfactor*vabx*dkz / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[2][1]), -mixfactor*vaby*dkz / (SPptr[ii]).dens);
+							atomicAdd(&(SPptr[ii].vel_grad[2][2]), -mixfactor*vabz*dkz / (SPptr[ii]).dens);
 
-							atomicAdd(&(SPptr[ii].stress_accel[0]), mixfactor*((SPptr[ii]).stress_tensor[0][0] * dkx + (SPptr[ii]).stress_tensor[0][1] * dky + (SPptr[ii]).stress_tensor[0][2] * dkz) / powf((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[0][0] * dkx + (SPptr[ii]).stress_tensor[0][1] * dky + (SPptr[ii]).stress_tensor[0][2] * dkz) / powf((SPptr[ii]).dens, 2));
-							atomicAdd(&(SPptr[ii].stress_accel[1]), mixfactor*((SPptr[ii]).stress_tensor[1][0] * dkx + (SPptr[ii]).stress_tensor[1][1] * dky + (SPptr[ii]).stress_tensor[1][2] * dkz) / powf((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[1][0] * dkx + (SPptr[ii]).stress_tensor[1][1] * dky + (SPptr[ii]).stress_tensor[1][2] * dkz) / powf((SPptr[ii]).dens, 2));
-							atomicAdd(&(SPptr[ii].stress_accel[2]), mixfactor*((SPptr[ii]).stress_tensor[2][0] * dkx + (SPptr[ii]).stress_tensor[2][1] * dky + (SPptr[ii]).stress_tensor[2][2] * dkz) / powf((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[2][0] * dkx + (SPptr[ii]).stress_tensor[2][1] * dky + (SPptr[ii]).stress_tensor[2][2] * dkz) / powf((SPptr[ii]).dens, 2));
+							atomicAdd(&(SPptr[ii].stress_accel[0]), mixfactor*((SPptr[ii]).stress_tensor[0][0] * dkx + (SPptr[ii]).stress_tensor[0][1] * dky + (SPptr[ii]).stress_tensor[0][2] * dkz) / pow((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[0][0] * dkx + (SPptr[ii]).stress_tensor[0][1] * dky + (SPptr[ii]).stress_tensor[0][2] * dkz) / pow((SPptr[ii]).dens, 2));
+							atomicAdd(&(SPptr[ii].stress_accel[1]), mixfactor*((SPptr[ii]).stress_tensor[1][0] * dkx + (SPptr[ii]).stress_tensor[1][1] * dky + (SPptr[ii]).stress_tensor[1][2] * dkz) / pow((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[1][0] * dkx + (SPptr[ii]).stress_tensor[1][1] * dky + (SPptr[ii]).stress_tensor[1][2] * dkz) / pow((SPptr[ii]).dens, 2));
+							atomicAdd(&(SPptr[ii].stress_accel[2]), mixfactor*((SPptr[ii]).stress_tensor[2][0] * dkx + (SPptr[ii]).stress_tensor[2][1] * dky + (SPptr[ii]).stress_tensor[2][2] * dkz) / pow((SPptr[ii]).dens, 2) + ((SPptr[ii]).stress_tensor[2][0] * dkx + (SPptr[ii]).stress_tensor[2][1] * dky + (SPptr[ii]).stress_tensor[2][2] * dkz) / pow((SPptr[ii]).dens, 2));
 
 							volatile float ds2 = dot_prod(SPptr[j].soliddriftvelx, SPptr[j].soliddriftvely, SPptr[j].soliddriftvelz, dkx, dky, dkz);
 							volatile float ds = dot_prod(SPptr[ii].soliddriftvelx, SPptr[ii].soliddriftvely, SPptr[ii].soliddriftvelz, dkx, dky, dkz);
@@ -412,7 +377,7 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 	}
 	__syncthreads();
 
-	
+
 	if (idx < nspts) {
 		if ((SPptr[idx]).solid) {
 			float tr = 0; //trace of strain rate
@@ -439,10 +404,10 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 			//	std::cout << (SPptr[index]).press << "\n";
 			for (int p = 0; p < 3; p++) {
 				for (int q = 0; q < 3; q++) {
-					if (3 * tan(PHI) / (sqrt(9 + 12 * powf(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * powf(tan(PHI), 2))) < tr3 && tr3 != 0) {
-						(SPptr[idx]).stress_tensor[p][q] *= (3 * tan(PHI) / (sqrt(9 + 12 * powf(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * powf(tan(PHI), 2)))) / tr3;
+					if (3 * tan(PHI) / (sqrt(9 + 12 * pow(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * pow(tan(PHI), 2))) < tr3 && tr3 != 0) {
+						(SPptr[idx]).stress_tensor[p][q] *= (3 * tan(PHI) / (sqrt(9 + 12 * pow(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * pow(tan(PHI), 2)))) / tr3;
 					}
-					(SPptr[idx]).stress_rate[p][q] = 3 * C1*((SPptr[idx]).press)*((SPptr[idx]).strain_rate[p][q] - 1. / 3.*tr*(p == q)) + C1*C2*(tr4 + tr*(SPptr[idx]).press*(SPptr[idx].press>0)) / (powf((SPptr[idx]).press, 2) + 1e8)*(SPptr[idx]).stress_tensor[p][q] - C1*C3*sqrt(tr5)*(SPptr[idx]).stress_tensor[p][q];
+					(SPptr[idx]).stress_rate[p][q] = 3 * C1*((SPptr[idx]).press)*((SPptr[idx]).strain_rate[p][q] - 1. / 3.*tr*(p == q)) + C1*C2*(tr4 + tr*(SPptr[idx]).press*(SPptr[idx].press>0)) / (pow((SPptr[idx]).press, 2) + 1e8)*(SPptr[idx]).stress_tensor[p][q] - C1*C3*sqrt(tr5)*(SPptr[idx]).stress_tensor[p][q];
 					//std::cout << tr4 << ", " << tr*(SPptr[index]).press << "\n";
 
 				}
@@ -451,15 +416,18 @@ __global__ void mykernel(Particle *SPptr, int *particleindex, int *cell, int *st
 		//}	
 	}
 		__syncthreads();
-		
+
 	}
 
-__global__ void mykernel2(Particle *SPptr, int *particleindex, int *cells, int *start_copy, int *start, int *end, int *split, int *numsplit, int nspts, int x, int dev, int buffer, int t, float *spts, float *a3, float *b3) {
+__global__ void mykernel2(Particle *SPptr, int *particleindex, int *cells, int *start_copy, int *start, int *end, int *split, int *numsplit, int nspts, int x, int dev, int buffer, float *spts, float *a3, float *b3) {
 	int index = blockIdx.x * blockDim.x + threadIdx.x;
-
+	//if (index < nspts && SPptr[index].cellnumber==32820){printf("%d %d %4.4f\n",index, SPptr[index].cellnumber, SPptr[index].xcoord);}
+	//int bidx = blockIdx.x;
+	//int tidx = threadIdx.x;
+	//if (dev ==3 && index <nspts && SPptr[index].cellnumber == 16801){printf("kernel2: %d, %4.4f \n",index, SPptr[index].cellnumber);}
 	int lb = max(0, dev*NUMCELLS/2-buffer);
 	int hb = lb+x;//min(NUMCELLS, NUMCELLS/4*(dev+1)+buffer);
-	
+	//if (index < nspts && dev ==2){printf("%d %d %d\n",SPptr[index].cellnumber,lb,hb);}
 	 
 	if (index < nspts) {
         SPptr[particleindex[index]].flag = false;
@@ -468,16 +436,15 @@ __global__ void mykernel2(Particle *SPptr, int *particleindex, int *cells, int *
 			spts[(3 * index)] = (SPptr[particleindex[index]]).xcoord;
 			spts[(3 * index) + 1] = (SPptr[particleindex[index]]).ycoord;
 			spts[(3 * index) + 2] = (SPptr[particleindex[index]]).zcoord;
-			a3[index] = ((SPptr[particleindex[index]])).mass;
-			b3[index] = powf(SPptr[particleindex[index]].diffusionx,2)+powf(SPptr[particleindex[index]].diffusiony,2)+powf(SPptr[particleindex[index]].diffusionz,2);
+			a3[index] = ((SPptr[particleindex[index]])).subindex;
+			b3[index] = SPptr[particleindex[index]].cellnumber;
 		}
-		//if (SPptr[index].cellnumber >= dev*NUMCELLS/2 && SPptr[index].cellnumber < dev*NUMCELLS/2 + NUMCELLS/2){ //for 2 devices
-		(SPptr[particleindex[index]]).update(t);
-		//}
-		
+		//if (SPptr[index].cellnumber >= dev*NUMCELLS/2 && SPptr[index].cellnumber < dev*NUMCELLS/2 + NUMCELLS/2){
+		(SPptr[particleindex[index]]).update();
+	//}
 		//(SPptr[index]).cellnumber = int((SPptr[index].xcoord - XMIN) / CELLSIZE)*GRIDSIZE*GRIDSIZE + int((SPptr[index].ycoord - YMIN) / CELLSIZE)*GRIDSIZE + int((SPptr[index].zcoord - ZMIN) / CELLSIZE);
-		
-		cells[index] = SPptr[particleindex[index]].cellnumber; 
+		//SPptr[index].cellnumber = morton(int((SPptr[index].xcoord - XMIN) / CELLSIZE), int((SPptr[index].ycoord - YMIN) / CELLSIZE), int((SPptr[index].zcoord - ZMIN) / CELLSIZE));
+		cells[index] = SPptr[particleindex[index]].cellnumber; //cells[pidx] or cells[index]???
 		SPptr[index].newdens = 0;
 		SPptr[index].newdelpressx = 0;
 		SPptr[index].newdelpressy = 0;
@@ -486,7 +453,7 @@ __global__ void mykernel2(Particle *SPptr, int *particleindex, int *cells, int *
 		SPptr[index].stress_accel[0] = SPptr[index].stress_accel[1] = SPptr[index].stress_accel[2] = 0;
 		SPptr[index].fluiddriftvelx	= SPptr[index].fluiddriftvely = SPptr[index].fluiddriftvelz = SPptr[index].soliddriftvelx = SPptr[index].soliddriftvely = SPptr[index].soliddriftvelz = 0;
 		SPptr[index].mixture_accel[0] = SPptr[index].mixture_accel[1] = SPptr[index].mixture_accel[2] = 0;
-		SPptr[index].delsolid = SPptr[index].delfluid = SPptr[index].diffusionx = SPptr[index].diffusionz =SPptr[index].diffusiony =0;
+		SPptr[index].delsolid = SPptr[index].delfluid = 0;
 		
 	}
 	if (index < x) {
@@ -557,15 +524,7 @@ __global__ void cell_calc(Particle *SPptr, int *particleindex, int *cells, int s
 }
 
 
-__global__ void count_after_merge(int *cells, int *particleindex, int size, int *newsize) {
-	int idx = blockIdx.x * blockDim.x + threadIdx.x;
-	if (idx > 0 && idx < size){
-		if (cells[idx]>=NUMCELLS & cells[idx-1]<NUMCELLS){
-			*newsize = idx;
-		}
-	}
 
-}
 
 
 
@@ -578,7 +537,7 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 	int idx = blockIdx.x * blockDim.x + threadIdx.x;
 	int bidx = blockIdx.x;
 	int tidx = threadIdx.x;
-	const int threadsperblockmax = 1024;
+	const int threadsperblockmax = 340;
 
 
 	//bidx checks cell number split[bidx/8], subindex bidx % 8
@@ -586,7 +545,7 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 	int diry = ((bidx % 8) & 2) >> 1;
 	int dirz = ((bidx % 8) & 4) >> 2;
 
-	int nb[8] = {0, powf(-1,1+dirx)*GRIDSIZE*GRIDSIZE, powf(-1,1+diry)*GRIDSIZE, powf(-1,dirz),powf(-1,1+dirx)*GRIDSIZE*GRIDSIZE + powf(-1,1+diry)*GRIDSIZE, powf(-1,1+dirx)*GRIDSIZE*GRIDSIZE + powf(-1,dirz), powf(-1,1+diry)*GRIDSIZE + powf(-1,dirz), powf(-1,1+dirx)*GRIDSIZE*GRIDSIZE + powf(-1,1+diry)*GRIDSIZE + powf(-1,dirz)};
+	int nb[8] = {0, pow(-1,1+dirx)*GRIDSIZE*GRIDSIZE, pow(-1,1+diry)*GRIDSIZE, pow(-1,dirz),pow(-1,1+dirx)*GRIDSIZE*GRIDSIZE + pow(-1,1+diry)*GRIDSIZE, pow(-1,1+dirx)*GRIDSIZE*GRIDSIZE + pow(-1,dirz), pow(-1,1+diry)*GRIDSIZE + pow(-1,dirz), pow(-1,1+dirx)*GRIDSIZE*GRIDSIZE + pow(-1,1+diry)*GRIDSIZE + pow(-1,dirz)};
 	//if (split[bidx/8] >=0 && bidx % 8 == 0 && tidx < 8 ){printf("%d %d\n",split[bidx/8], split[bidx/8] + nb[tidx]);}
 
 	__shared__ short int p[8];
@@ -682,34 +641,6 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 					volatile int i = particleindex[ii];
 					if (SPptr[i].subindex == bidx % 8){
 					float ds = (SPptr[i]).distance((SPptr[j]));
-					
-					//Particle merging
-					if (ds <= (MERGE_DIST) && ds > 0 && SPptr[i].mass>0 && SPptr[j].mass> 0 && SPptr[i].mass<2 && SPptr[j].mass<2 && !SPptr[i].boundary &&!SPptr[j].boundary && powf(SPptr[i].diffusionx,2)+powf(SPptr[i].diffusiony,2)+powf(SPptr[i].diffusionz,2) < 20 && powf(SPptr[j].diffusionx,2)+powf(SPptr[j].diffusiony,2)+powf(SPptr[j].diffusionz,2) < 20) {
-						SPptr[ii].mass = MERGE_MASS;
-						SPptr[j].mass = 0;
-						
-						SPptr[j].boundary = true;
-						SPptr[ii].xvel=  (SPptr[ii].xvel + SPptr[j].xvel)/2.0;
-						SPptr[ii].yvel=  (SPptr[ii].yvel + SPptr[j].yvel)/2.0;
-						SPptr[ii].zvel=  (SPptr[ii].zvel + SPptr[j].zvel)/2.0;
-						SPptr[ii].xcoord=  (SPptr[ii].xcoord + SPptr[j].xcoord)/2.0;
-						SPptr[ii].ycoord=  (SPptr[ii].ycoord + SPptr[j].ycoord)/2.0;
-						SPptr[ii].zcoord=  (SPptr[ii].zcoord + SPptr[j].zcoord)/2.0;
-						SPptr[j].xcoord = SPptr[j].ycoord = SPptr[j].zcoord=90.99;
-						//SPptr[j].cellnumber = NUMCELLS+1;
-						//printf("%4.4f \n",ds);
-					} 
-
-					//Particle splitting
-					if (SPptr[i].mass>3 && SPptr[i].cellnumber < NUMCELLS && !SPptr[i].boundary && ((powf(SPptr[i].diffusionx,2)+powf(SPptr[i].diffusiony,2)+powf(SPptr[i].diffusionz,2)) > 35000 || (SPptr[i].dens < 9400))) {
-						SPptr[i].mass = 1;
-						
-						SPptr[i].split = true;
-						SPptr[i].ycoord += 0.015;
-						//SPptr[j].cellnumber = NUMCELLS+1;
-						//printf("%4.4f \n",ds);
-					}
-
 					if (ds <= (2 * cutoff) && ds > 0) { //should exclude buffer here somehow?
 
 						volatile float k = kernel(ds);
@@ -729,8 +660,7 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 
 						volatile float d = dot_prod(vabx, vaby, vabz, rabx, raby, rabz);
 						volatile float d2 = powf(ds, 2);
-						//added mass
-						volatile float s = (((SPptr[i].solid*9+1)*ALPHA_FLUID)* SOUND * (powf(SPptr[i].mass,1)*cutoff * (d / (d2 + 0.01*powf(cutoff, 2))) + 50 * 1.0 / SOUND*powf(cutoff * (d / (d2 + 0.01*powf(cutoff, 2))), 2)) / (((SPptr[i]).dens + (SPptr[j]).dens) / 2.0)) *(d < 0)*(1 + (!(SPptr[i]).boundary)*((SPptr[j]).boundary) * ((1+3*SPptr[i].fluid*SPptr[i].fluid)*ALPHA__SAND_BOUNDARY));
+						volatile float s = (((SPptr[i].solid*9+1)*ALPHA_FLUID)* SOUND * (cutoff * (d / (d2 + 0.01*powf(cutoff, 2))) + 50 * 1.0 / SOUND*powf(cutoff * (d / (d2 + 0.01*powf(cutoff, 2))), 2)) / (((SPptr[i]).dens + (SPptr[j]).dens) / 2.0)) *(d < 0)*(1 + (!(SPptr[i]).boundary)*((SPptr[j]).boundary) * ((1+3*SPptr[i].fluid*SPptr[i].fluid)*ALPHA__SAND_BOUNDARY));
 						//float s2 = ALPHA_LAMINAR_FLUID * SOUND * cutoff / ((SPptr[i]).dens + (SPptr[j]).dens)*d*(d < 0) / (d2 + 0.01*pow(cutoff, 2))*(1 + (!(SPptr[i]).boundary)*((SPptr[j]).boundary) *ALPHA_LAMINAR_BOUNDARY); //laminar
 
 						volatile float dpx = ((SPptr[j]).press / powf((SPptr[j]).dens, 2) + (SPptr[i]).press / powf((SPptr[i]).dens, 2) + s)*dkx;
@@ -781,30 +711,30 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 							atomicAdd(&(SPptr[i].fluiddriftvely), MIXPRESSURE*(fluidbodyy + fluidpressureslipy) - MIXBROWNIAN*fluidbrowniany);
 							atomicAdd(&(SPptr[i].fluiddriftvelz), MIXPRESSURE*(fluidbodyz + fluidpressureslipz) - MIXBROWNIAN*fluidbrownianz);
 						}
-							atomicAdd(&(SPptr[i].newdelpressx), dpx*SPptr[j].mass); //added mass
-							atomicAdd(&(SPptr[i].newdelpressy), dpy*SPptr[j].mass);
-							atomicAdd(&(SPptr[i].newdelpressz), dpz*SPptr[j].mass);
+							atomicAdd(&(SPptr[i].newdelpressx), dpx);
+							atomicAdd(&(SPptr[i].newdelpressy), dpy);
+							atomicAdd(&(SPptr[i].newdelpressz), dpz);
 							
-							atomicAdd(&(SPptr[i].newdens), k *(1 + float(!(SPptr[i]).boundary)*float((SPptr[j]).boundary)*BDENSFACTOR)*SPptr[j].mass); //added mass
+							atomicAdd(&(SPptr[i].newdens), k *(1 + float(!(SPptr[i]).boundary)*float((SPptr[j]).boundary)*BDENSFACTOR));
 
-							atomicAdd(&(SPptr[i].diffusionx), SPptr[j].mass / SPptr[j].dens*dkx*!SPptr[j].boundary*!SPptr[i].boundary); //added mass
-							atomicAdd(&(SPptr[i].diffusiony), SPptr[j].mass / SPptr[j].dens*dky*!SPptr[j].boundary*!SPptr[i].boundary);
-							atomicAdd(&(SPptr[i].diffusionz), SPptr[j].mass / SPptr[j].dens*dkz*!SPptr[j].boundary*!SPptr[i].boundary);
+							atomicAdd(&(SPptr[i].diffusionx), 1 / SPptr[j].dens*dkx);
+							atomicAdd(&(SPptr[i].diffusiony), 1 / SPptr[j].dens*dky);
+							atomicAdd(&(SPptr[i].diffusionz), 1 / SPptr[j].dens*dkz);
 							
 							volatile float mixfactor = (!SPptr[j].boundary)*(!SPptr[i].boundary)*(SPptr[i].solid > 0.0)* (SPptr[j].solid > 0.0) * 2 * (SPptr[i].solid-0.0)*(SPptr[j].solid-0.0) / (SPptr[i].solid-0.0 + SPptr[j].solid-0.0+0.01);
-							atomicAdd(&(SPptr[i].vel_grad[0][0]), -mixfactor*vabx*dkx *1./ (SPptr[i]).dens); //added mass
-							atomicAdd(&(SPptr[i].vel_grad[0][1]), -mixfactor*vaby*dkx *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[0][2]), -mixfactor*vabz*dkx *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[1][0]), -mixfactor*vabx*dky *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[1][1]), -mixfactor*vaby*dky *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[1][2]), -mixfactor*vabz*dky *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[2][0]), -mixfactor*vabx*dkz *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[2][1]), -mixfactor*vaby*dkz *1./ (SPptr[i]).dens);
-							atomicAdd(&(SPptr[i].vel_grad[2][2]), -mixfactor*vabz*dkz *1./ (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[0][0]), -mixfactor*vabx*dkx / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[0][1]), -mixfactor*vaby*dkx / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[0][2]), -mixfactor*vabz*dkx / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[1][0]), -mixfactor*vabx*dky / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[1][1]), -mixfactor*vaby*dky / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[1][2]), -mixfactor*vabz*dky / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[2][0]), -mixfactor*vabx*dkz / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[2][1]), -mixfactor*vaby*dkz / (SPptr[i]).dens);
+							atomicAdd(&(SPptr[i].vel_grad[2][2]), -mixfactor*vabz*dkz / (SPptr[i]).dens);
 
-							atomicAdd(&(SPptr[i].stress_accel[0]), mixfactor*((SPptr[i]).stress_tensor[0][0] * dkx + (SPptr[i]).stress_tensor[0][1] * dky + (SPptr[i]).stress_tensor[0][2] * dkz) / powf((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[0][0] * dkx + (SPptr[i]).stress_tensor[0][1] * dky + (SPptr[i]).stress_tensor[0][2] * dkz) / powf((SPptr[i]).dens, 2));
-							atomicAdd(&(SPptr[i].stress_accel[1]), mixfactor*((SPptr[i]).stress_tensor[1][0] * dkx + (SPptr[i]).stress_tensor[1][1] * dky + (SPptr[i]).stress_tensor[1][2] * dkz) / powf((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[1][0] * dkx + (SPptr[i]).stress_tensor[1][1] * dky + (SPptr[i]).stress_tensor[1][2] * dkz) / powf((SPptr[i]).dens, 2));
-							atomicAdd(&(SPptr[i].stress_accel[2]), mixfactor*((SPptr[i]).stress_tensor[2][0] * dkx + (SPptr[i]).stress_tensor[2][1] * dky + (SPptr[i]).stress_tensor[2][2] * dkz) / powf((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[2][0] * dkx + (SPptr[i]).stress_tensor[2][1] * dky + (SPptr[i]).stress_tensor[2][2] * dkz) / powf((SPptr[i]).dens, 2));
+							atomicAdd(&(SPptr[i].stress_accel[0]), mixfactor*((SPptr[i]).stress_tensor[0][0] * dkx + (SPptr[i]).stress_tensor[0][1] * dky + (SPptr[i]).stress_tensor[0][2] * dkz) / pow((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[0][0] * dkx + (SPptr[i]).stress_tensor[0][1] * dky + (SPptr[i]).stress_tensor[0][2] * dkz) / pow((SPptr[i]).dens, 2));
+							atomicAdd(&(SPptr[i].stress_accel[1]), mixfactor*((SPptr[i]).stress_tensor[1][0] * dkx + (SPptr[i]).stress_tensor[1][1] * dky + (SPptr[i]).stress_tensor[1][2] * dkz) / pow((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[1][0] * dkx + (SPptr[i]).stress_tensor[1][1] * dky + (SPptr[i]).stress_tensor[1][2] * dkz) / pow((SPptr[i]).dens, 2));
+							atomicAdd(&(SPptr[i].stress_accel[2]), mixfactor*((SPptr[i]).stress_tensor[2][0] * dkx + (SPptr[i]).stress_tensor[2][1] * dky + (SPptr[i]).stress_tensor[2][2] * dkz) / pow((SPptr[i]).dens, 2) + ((SPptr[i]).stress_tensor[2][0] * dkx + (SPptr[i]).stress_tensor[2][1] * dky + (SPptr[i]).stress_tensor[2][2] * dkz) / pow((SPptr[i]).dens, 2));
 
 							volatile float ds2 = dot_prod(SPptr[j].soliddriftvelx, SPptr[j].soliddriftvely, SPptr[j].soliddriftvelz, dkx, dky, dkz);
 							volatile float ds = dot_prod(SPptr[i].soliddriftvelx, SPptr[i].soliddriftvely, SPptr[i].soliddriftvelz, dkx, dky, dkz);
@@ -860,10 +790,10 @@ __global__ void mykernel3(Particle *SPptr, int *particleindex, int *cell, int *s
 			//	std::cout << (SPptr[index]).press << "\n";
 			for (int p = 0; p < 3; p++) {
 				for (int q = 0; q < 3; q++) {
-					if (3 * tan(PHI) / (sqrt(9 + 12 * powf(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * powf(tan(PHI), 2))) < tr3 && tr3 != 0) {
-						(SPptr[idx]).stress_tensor[p][q] *= (3 * tan(PHI) / (sqrt(9 + 12 * powf(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * powf(tan(PHI), 2)))) / tr3;
+					if (3 * tan(PHI) / (sqrt(9 + 12 * pow(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * pow(tan(PHI), 2))) < tr3 && tr3 != 0) {
+						(SPptr[idx]).stress_tensor[p][q] *= (3 * tan(PHI) / (sqrt(9 + 12 * pow(tan(PHI), 2)))*(SPptr[idx]).press*(SPptr[idx].press>0) + KC / (sqrt(9 + 12 * pow(tan(PHI), 2)))) / tr3;
 					}
-					(SPptr[idx]).stress_rate[p][q] = 3 * C1*((SPptr[idx]).press)*((SPptr[idx]).strain_rate[p][q] - 1. / 3.*tr*(p == q)) + C1*C2*(tr4 + tr*(SPptr[idx]).press*(SPptr[idx].press>0)) / (powf((SPptr[idx]).press, 2) + 1e8)*(SPptr[idx]).stress_tensor[p][q] - C1*C3*sqrt(tr5)*(SPptr[idx]).stress_tensor[p][q];
+					(SPptr[idx]).stress_rate[p][q] = 3 * C1*((SPptr[idx]).press)*((SPptr[idx]).strain_rate[p][q] - 1. / 3.*tr*(p == q)) + C1*C2*(tr4 + tr*(SPptr[idx]).press*(SPptr[idx].press>0)) / (pow((SPptr[idx]).press, 2) + 1e8)*(SPptr[idx]).stress_tensor[p][q] - C1*C3*sqrt(tr5)*(SPptr[idx]).stress_tensor[p][q];
 					//std::cout << tr4 << ", " << tr*(SPptr[index]).press << "\n";
 
 				}
